@@ -52,6 +52,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	"k8s.io/kubernetes/pkg/kubelet/status"
+	"k8s.io/kubernetes/pkg/kubelet/util/pluginwatcher"
 	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 	utilfile "k8s.io/kubernetes/pkg/util/file"
 	"k8s.io/kubernetes/pkg/util/mount"
@@ -601,6 +602,10 @@ func (cm *containerManagerImpl) Start(node *v1.Node,
 	}
 
 	return nil
+}
+
+func (cm *containerManagerImpl) GetPluginRegistrationHandlerCallback() pluginwatcher.RegisterCallbackFn {
+	return cm.deviceManager.GetWatcherCallback()
 }
 
 // TODO: move the GetResources logic to PodContainerManager.
