@@ -10,6 +10,7 @@ metadata:
     version: v0.9.7
     kubernetes.io/name: "GLBC"
 spec:
+  priorityClassName: system-node-critical
   terminationGracePeriodSeconds: 600
   hostNetwork: true
   containers:

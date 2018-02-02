@@ -11,6 +11,7 @@ metadata:
     kubernetes.io/cluster-service: "true"
     kubernetes.io/name: "Rescheduler"
 spec:
+  priorityClassName: system-node-critical
   hostNetwork: true
   containers:
   - image: gcr.io/google-containers/rescheduler:v0.3.1

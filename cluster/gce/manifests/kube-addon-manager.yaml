@@ -8,6 +8,7 @@ metadata:
   labels:
     component: kube-addon-manager
 spec:
+  priorityClassName: system-node-critical
   hostNetwork: true
   containers:
   - name: kube-addon-manager
