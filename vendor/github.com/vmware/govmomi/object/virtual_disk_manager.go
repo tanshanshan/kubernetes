@@ -17,10 +17,11 @@ limitations under the License.
 package object
 
 import (
+	"context"
+
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/types"
-	"golang.org/x/net/context"
 )
 
 type VirtualDiskManager struct {
@@ -137,6 +138,47 @@ func (m VirtualDiskManager) DeleteVirtualDisk(ctx context.Context, name string, 
 	}
 
 	res, err := methods.DeleteVirtualDisk_Task(ctx, m.c, &req)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewTask(m.c, res.Returnval), nil
+}
+
+// InflateVirtualDisk inflates a virtual disk.
+func (m VirtualDiskManager) InflateVirtualDisk(ctx context.Context, name string, dc *Datacenter) (*Task, error) {
+	req := types.InflateVirtualDisk_Task{
+		This: m.Reference(),
+		Name: name,
+	}
+
+	if dc != nil {
+		ref := dc.Reference()
+		req.Datacenter = &ref
+	}
+
+	res, err := methods.InflateVirtualDisk_Task(ctx, m.c, &req)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewTask(m.c, res.Returnval), nil
+}
+
+// ShrinkVirtualDisk shrinks a virtual disk.
+func (m VirtualDiskManager) ShrinkVirtualDisk(ctx context.Context, name string, dc *Datacenter, copy *bool) (*Task, error) {
+	req := types.ShrinkVirtualDisk_Task{
+		This: m.Reference(),
+		Name: name,
+		Copy: copy,
+	}
+
+	if dc != nil {
+		ref := dc.Reference()
+		req.Datacenter = &ref
+	}
+
+	res, err := methods.ShrinkVirtualDisk_Task(ctx, m.c, &req)
 	if err != nil {
 		return nil, err
 	}

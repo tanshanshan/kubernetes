@@ -1,52 +1,49 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_binary",
+    "go_library",
 )
+load("//pkg/version:def.bzl", "version_x_defs")
 
 go_binary(
     name = "hyperkube",
-    srcs = [
-        "federation-apiserver.go",
-        "federation-controller-manager.go",
-        "hyperkube.go",
-        "kube-apiserver.go",
-        "kube-controller-manager.go",
-        "kube-proxy.go",
-        "kube-scheduler.go",
-        "kubectl.go",
-        "kubelet.go",
-        "main.go",
-        "server.go",
-    ],
-    tags = ["automanaged"],
+    embed = [":go_default_library"],
+    x_defs = version_x_defs(),
+)
+
+go_library(
+    name = "go_default_library",
+    srcs = ["main.go"],
+    importpath = "k8s.io/kubernetes/cmd/hyperkube",
     deps = [
+        "//cmd/cloud-controller-manager/app:go_default_library",
         "//cmd/kube-apiserver/app:go_default_library",
-        "//cmd/kube-apiserver/app/options:go_default_library",
         "//cmd/kube-controller-manager/app:go_default_library",
-        "//cmd/kube-controller-manager/app/options:go_default_library",
         "//cmd/kube-proxy/app:go_default_library",
-        "//cmd/kube-proxy/app/options:go_default_library",
+        "//cmd/kube-scheduler/app:go_default_library",
         "//cmd/kubelet/app:go_default_library",
-        "//cmd/kubelet/app/options:go_default_library",
-        "//federation/cmd/federation-apiserver/app:go_default_library",
-        "//federation/cmd/federation-apiserver/app/options:go_default_library",
-        "//federation/cmd/federation-controller-manager/app:go_default_library",
-        "//federation/cmd/federation-controller-manager/app/options:go_default_library",
         "//pkg/client/metrics/prometheus:go_default_library",
-        "//pkg/healthz:go_default_library",
         "//pkg/kubectl/cmd:go_default_library",
-        "//pkg/kubectl/cmd/util:go_default_library",
-        "//pkg/util:go_default_library",
-        "//pkg/util/flag:go_default_library",
-        "//pkg/util/logs:go_default_library",
         "//pkg/version/prometheus:go_default_library",
-        "//pkg/version/verflag:go_default_library",
-        "//plugin/cmd/kube-scheduler/app:go_default_library",
-        "//plugin/cmd/kube-scheduler/app/options:go_default_library",
-        "//vendor:github.com/spf13/pflag",
+        "//staging/src/k8s.io/apiserver/pkg/server:go_default_library",
+        "//staging/src/k8s.io/apiserver/pkg/util/flag:go_default_library",
+        "//staging/src/k8s.io/apiserver/pkg/util/logs:go_default_library",
+        "//vendor/github.com/spf13/cobra:go_default_library",
+        "//vendor/github.com/spf13/pflag:go_default_library",
     ],
+)
+
+filegroup(
+    name = "package-srcs",
+    srcs = glob(["**"]),
+    tags = ["automanaged"],
+    visibility = ["//visibility:private"],
+)
+
+filegroup(
+    name = "all-srcs",
+    srcs = [":package-srcs"],
+    tags = ["automanaged"],
 )

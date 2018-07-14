@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -15,18 +13,39 @@ go_library(
         "oom.go",
         "oom_fake.go",
         "oom_linux.go",
+        "oom_unsupported.go",
     ],
-    tags = ["automanaged"],
-    deps = [
-        "//pkg/kubelet/cm/util:go_default_library",
-        "//vendor:github.com/golang/glog",
-    ],
+    importpath = "k8s.io/kubernetes/pkg/util/oom",
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//pkg/kubelet/cm/util:go_default_library",
+            "//vendor/github.com/golang/glog:go_default_library",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 go_test(
     name = "go_default_test",
     srcs = ["oom_linux_test.go"],
-    library = "go_default_library",
+    embed = [":go_default_library"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//vendor/github.com/stretchr/testify/assert:go_default_library",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+filegroup(
+    name = "package-srcs",
+    srcs = glob(["**"]),
     tags = ["automanaged"],
-    deps = ["//vendor:github.com/stretchr/testify/assert"],
+    visibility = ["//visibility:private"],
+)
+
+filegroup(
+    name = "all-srcs",
+    srcs = [":package-srcs"],
+    tags = ["automanaged"],
 )

@@ -17,10 +17,11 @@ limitations under the License.
 package object
 
 import (
+	"context"
+
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/types"
-	"golang.org/x/net/context"
 )
 
 type DistributedVirtualSwitch struct {
@@ -63,4 +64,17 @@ func (s DistributedVirtualSwitch) AddPortgroup(ctx context.Context, spec []types
 	}
 
 	return NewTask(s.Client(), res.Returnval), nil
+}
+
+func (s DistributedVirtualSwitch) FetchDVPorts(ctx context.Context, criteria *types.DistributedVirtualSwitchPortCriteria) ([]types.DistributedVirtualPort, error) {
+	req := &types.FetchDVPorts{
+		This:     s.Reference(),
+		Criteria: criteria,
+	}
+
+	res, err := methods.FetchDVPorts(ctx, s.Client(), req)
+	if err != nil {
+		return nil, err
+	}
+	return res.Returnval, nil
 }

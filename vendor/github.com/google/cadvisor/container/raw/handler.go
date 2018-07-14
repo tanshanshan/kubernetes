@@ -26,7 +26,6 @@ import (
 	"github.com/google/cadvisor/machine"
 
 	"github.com/golang/glog"
-	"github.com/opencontainers/runc/libcontainer/cgroups"
 	cgroupfs "github.com/opencontainers/runc/libcontainer/cgroups/fs"
 	"github.com/opencontainers/runc/libcontainer/configs"
 )
@@ -34,25 +33,16 @@ import (
 type rawContainerHandler struct {
 	// Name of the container for this handler.
 	name               string
-	cgroupSubsystems   *libcontainer.CgroupSubsystems
 	machineInfoFactory info.MachineInfoFactory
 
 	// Absolute path to the cgroup hierarchies of this container.
 	// (e.g.: "cpu" -> "/sys/fs/cgroup/cpu/test")
 	cgroupPaths map[string]string
 
-	// Manager of this container's cgroups.
-	cgroupManager cgroups.Manager
-
 	fsInfo         fs.FsInfo
 	externalMounts []common.Mount
 
-	rootFs string
-
-	// Metrics to be ignored.
-	ignoreMetrics container.MetricSet
-
-	pid int
+	libcontainerHandler *libcontainer.Handler
 }
 
 func isRootCgroup(name string) bool {
@@ -88,17 +78,15 @@ func newRawContainerHandler(name string, cgroupSubsystems *libcontainer.CgroupSu
 		pid = 1
 	}
 
+	handler := libcontainer.NewHandler(cgroupManager, rootFs, pid, ignoreMetrics)
+
 	return &rawContainerHandler{
-		name:               name,
-		cgroupSubsystems:   cgroupSubsystems,
-		machineInfoFactory: machineInfoFactory,
-		cgroupPaths:        cgroupPaths,
-		cgroupManager:      cgroupManager,
-		fsInfo:             fsInfo,
-		externalMounts:     externalMounts,
-		rootFs:             rootFs,
-		ignoreMetrics:      ignoreMetrics,
-		pid:                pid,
+		name:                name,
+		machineInfoFactory:  machineInfoFactory,
+		cgroupPaths:         cgroupPaths,
+		fsInfo:              fsInfo,
+		externalMounts:      externalMounts,
+		libcontainerHandler: handler,
 	}, nil
 }
 
@@ -197,6 +185,7 @@ func fsToFsStats(fs *fs.Fs) info.FsStats {
 }
 
 func (self *rawContainerHandler) getFsStats(stats *info.ContainerStats) error {
+	var allFs []fs.Fs
 	// Get Filesystem information only for the root cgroup.
 	if isRootCgroup(self.name) {
 		filesystems, err := self.fsInfo.GetGlobalFsInfo()
@@ -207,6 +196,7 @@ func (self *rawContainerHandler) getFsStats(stats *info.ContainerStats) error {
 			fs := filesystems[i]
 			stats.Filesystem = append(stats.Filesystem, fsToFsStats(&fs))
 		}
+		allFs = filesystems
 	} else if len(self.externalMounts) > 0 {
 		var mountSet map[string]struct{}
 		mountSet = make(map[string]struct{})
@@ -221,12 +211,15 @@ func (self *rawContainerHandler) getFsStats(stats *info.ContainerStats) error {
 			fs := filesystems[i]
 			stats.Filesystem = append(stats.Filesystem, fsToFsStats(&fs))
 		}
+		allFs = filesystems
 	}
+
+	common.AssignDeviceNamesToDiskStats(&fsNamer{fs: allFs, factory: self.machineInfoFactory}, &stats.DiskIo)
 	return nil
 }
 
 func (self *rawContainerHandler) GetStats() (*info.ContainerStats, error) {
-	stats, err := libcontainer.GetStats(self.cgroupManager, self.rootFs, self.pid, self.ignoreMetrics)
+	stats, err := self.libcontainerHandler.GetStats()
 	if err != nil {
 		return stats, err
 	}
@@ -262,7 +255,7 @@ func (self *rawContainerHandler) ListContainers(listType container.ListType) ([]
 }
 
 func (self *rawContainerHandler) ListProcesses(listType container.ListType) ([]int, error) {
-	return libcontainer.GetProcesses(self.cgroupManager)
+	return self.libcontainerHandler.GetProcesses()
 }
 
 func (self *rawContainerHandler) Exists() bool {
@@ -271,4 +264,26 @@ func (self *rawContainerHandler) Exists() bool {
 
 func (self *rawContainerHandler) Type() container.ContainerType {
 	return container.ContainerTypeRaw
+}
+
+type fsNamer struct {
+	fs      []fs.Fs
+	factory info.MachineInfoFactory
+	info    common.DeviceNamer
+}
+
+func (n *fsNamer) DeviceName(major, minor uint64) (string, bool) {
+	for _, info := range n.fs {
+		if uint64(info.Major) == major && uint64(info.Minor) == minor {
+			return info.Device, true
+		}
+	}
+	if n.info == nil {
+		mi, err := n.factory.GetMachineInfo()
+		if err != nil {
+			return "", false
+		}
+		n.info = (*common.MachineInfoNamer)(mi)
+	}
+	return n.info.DeviceName(major, minor)
 }

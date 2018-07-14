@@ -50,7 +50,7 @@ const (
 	// UserAgent is the header string used to identify this package.
 	UserAgent = "google-api-go-client/" + Version
 
-	// The default chunk size to use for resumable uplods if not specified by the user.
+	// The default chunk size to use for resumable uploads if not specified by the user.
 	DefaultUploadChunkSize = 8 * 1024 * 1024
 
 	// The minimum chunk size that can be used for resumable uploads.  All
@@ -270,11 +270,20 @@ func ProcessMediaOptions(opts []MediaOption) *MediaOptions {
 
 func ResolveRelative(basestr, relstr string) string {
 	u, _ := url.Parse(basestr)
+	afterColonPath := ""
+	if i := strings.IndexRune(relstr, ':'); i > 0 {
+		afterColonPath = relstr[i+1:]
+		relstr = relstr[:i]
+	}
 	rel, _ := url.Parse(relstr)
 	u = u.ResolveReference(rel)
 	us := u.String()
+	if afterColonPath != "" {
+		us = fmt.Sprintf("%s:%s", us, afterColonPath)
+	}
 	us = strings.Replace(us, "%7B", "{", -1)
 	us = strings.Replace(us, "%7D", "}", -1)
+	us = strings.Replace(us, "%2A", "*", -1)
 	return us
 }
 

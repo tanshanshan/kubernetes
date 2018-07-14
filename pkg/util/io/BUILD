@@ -1,40 +1,25 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
-    "go_test",
 )
 
 go_library(
     name = "go_default_library",
-    srcs = [
-        "io.go",
-        "writer.go",
-    ],
-    tags = ["automanaged"],
-    deps = [
-        "//pkg/api:go_default_library",
-        "//pkg/api/v1:go_default_library",
-        "//pkg/apimachinery/registered:go_default_library",
-        "//pkg/runtime:go_default_library",
-        "//vendor:github.com/golang/glog",
-    ],
+    srcs = ["consistentread.go"],
+    importpath = "k8s.io/kubernetes/pkg/util/io",
 )
 
-go_test(
-    name = "go_default_xtest",
-    srcs = ["io_test.go"],
+filegroup(
+    name = "package-srcs",
+    srcs = glob(["**"]),
     tags = ["automanaged"],
-    deps = [
-        "//pkg/api:go_default_library",
-        "//pkg/apimachinery/registered:go_default_library",
-        "//pkg/runtime:go_default_library",
-        "//pkg/util/io:go_default_library",
-        "//pkg/util/testing:go_default_library",
-        "//pkg/volume:go_default_library",
-        "//vendor:github.com/pborman/uuid",
-    ],
+    visibility = ["//visibility:private"],
+)
+
+filegroup(
+    name = "all-srcs",
+    srcs = [":package-srcs"],
+    tags = ["automanaged"],
 )

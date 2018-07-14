@@ -18,13 +18,18 @@ limitations under the License.
 package policybased
 
 import (
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/rest"
+	"context"
+	"errors"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"k8s.io/apiserver/pkg/registry/rest"
+	kapihelper "k8s.io/kubernetes/pkg/apis/core/helper"
 	"k8s.io/kubernetes/pkg/apis/rbac"
-	"k8s.io/kubernetes/pkg/apis/rbac/validation"
 	rbacregistry "k8s.io/kubernetes/pkg/registry/rbac"
-	"k8s.io/kubernetes/pkg/runtime"
+	rbacregistryvalidation "k8s.io/kubernetes/pkg/registry/rbac/validation"
 )
 
 var groupResource = rbac.Resource("clusterroles")
@@ -32,40 +37,75 @@ var groupResource = rbac.Resource("clusterroles")
 type Storage struct {
 	rest.StandardStorage
 
-	ruleResolver validation.AuthorizationRuleResolver
+	authorizer authorizer.Authorizer
+
+	ruleResolver rbacregistryvalidation.AuthorizationRuleResolver
 }
 
-func NewStorage(s rest.StandardStorage, ruleResolver validation.AuthorizationRuleResolver) *Storage {
-	return &Storage{s, ruleResolver}
+func NewStorage(s rest.StandardStorage, authorizer authorizer.Authorizer, ruleResolver rbacregistryvalidation.AuthorizationRuleResolver) *Storage {
+	return &Storage{s, authorizer, ruleResolver}
 }
 
-func (s *Storage) Create(ctx api.Context, obj runtime.Object) (runtime.Object, error) {
-	if rbacregistry.EscalationAllowed(ctx) {
-		return s.StandardStorage.Create(ctx, obj)
+func (r *Storage) NamespaceScoped() bool {
+	return false
+}
+
+var fullAuthority = []rbac.PolicyRule{
+	rbac.NewRule("*").Groups("*").Resources("*").RuleOrDie(),
+	rbac.NewRule("*").URLs("*").RuleOrDie(),
+}
+
+func (s *Storage) Create(ctx context.Context, obj runtime.Object, createValidatingAdmission rest.ValidateObjectFunc, options *metav1.CreateOptions) (runtime.Object, error) {
+	if rbacregistry.EscalationAllowed(ctx) || rbacregistry.RoleEscalationAuthorized(ctx, s.authorizer) {
+		return s.StandardStorage.Create(ctx, obj, createValidatingAdmission, options)
 	}
 
 	clusterRole := obj.(*rbac.ClusterRole)
 	rules := clusterRole.Rules
-	if err := validation.ConfirmNoEscalation(ctx, s.ruleResolver, rules); err != nil {
-		return nil, errors.NewForbidden(groupResource, clusterRole.Name, err)
+	if err := rbacregistryvalidation.ConfirmNoEscalationInternal(ctx, s.ruleResolver, rules); err != nil {
+		return nil, apierrors.NewForbidden(groupResource, clusterRole.Name, err)
 	}
-	return s.StandardStorage.Create(ctx, obj)
+	// to set the aggregation rule, since it can gather anything, requires * on *.*
+	if hasAggregationRule(clusterRole) {
+		if err := rbacregistryvalidation.ConfirmNoEscalationInternal(ctx, s.ruleResolver, fullAuthority); err != nil {
+			return nil, apierrors.NewForbidden(groupResource, clusterRole.Name, errors.New("must have cluster-admin privileges to use the aggregationRule"))
+		}
+	}
+
+	return s.StandardStorage.Create(ctx, obj, createValidatingAdmission, options)
 }
 
-func (s *Storage) Update(ctx api.Context, name string, obj rest.UpdatedObjectInfo) (runtime.Object, bool, error) {
-	if rbacregistry.EscalationAllowed(ctx) {
-		return s.StandardStorage.Update(ctx, name, obj)
+func (s *Storage) Update(ctx context.Context, name string, obj rest.UpdatedObjectInfo, createValidation rest.ValidateObjectFunc, updateValidation rest.ValidateObjectUpdateFunc, forceAllowCreate bool, options *metav1.UpdateOptions) (runtime.Object, bool, error) {
+	if rbacregistry.EscalationAllowed(ctx) || rbacregistry.RoleEscalationAuthorized(ctx, s.authorizer) {
+		return s.StandardStorage.Update(ctx, name, obj, createValidation, updateValidation, forceAllowCreate, options)
 	}
 
-	nonEscalatingInfo := rest.WrapUpdatedObjectInfo(obj, func(ctx api.Context, obj runtime.Object, oldObj runtime.Object) (runtime.Object, error) {
+	nonEscalatingInfo := rest.WrapUpdatedObjectInfo(obj, func(ctx context.Context, obj runtime.Object, oldObj runtime.Object) (runtime.Object, error) {
 		clusterRole := obj.(*rbac.ClusterRole)
+		oldClusterRole := oldObj.(*rbac.ClusterRole)
+
+		// if we're only mutating fields needed for the GC to eventually delete this obj, return
+		if rbacregistry.IsOnlyMutatingGCFields(obj, oldObj, kapihelper.Semantic) {
+			return obj, nil
+		}
 
 		rules := clusterRole.Rules
-		if err := validation.ConfirmNoEscalation(ctx, s.ruleResolver, rules); err != nil {
-			return nil, errors.NewForbidden(groupResource, clusterRole.Name, err)
+		if err := rbacregistryvalidation.ConfirmNoEscalationInternal(ctx, s.ruleResolver, rules); err != nil {
+			return nil, apierrors.NewForbidden(groupResource, clusterRole.Name, err)
 		}
+		// to change the aggregation rule, since it can gather anything and prevent tightening, requires * on *.*
+		if hasAggregationRule(clusterRole) || hasAggregationRule(oldClusterRole) {
+			if err := rbacregistryvalidation.ConfirmNoEscalationInternal(ctx, s.ruleResolver, fullAuthority); err != nil {
+				return nil, apierrors.NewForbidden(groupResource, clusterRole.Name, errors.New("must have cluster-admin privileges to use the aggregationRule"))
+			}
+		}
+
 		return obj, nil
 	})
 
-	return s.StandardStorage.Update(ctx, name, nonEscalatingInfo)
+	return s.StandardStorage.Update(ctx, name, nonEscalatingInfo, createValidation, updateValidation, forceAllowCreate, options)
+}
+
+func hasAggregationRule(clusterRole *rbac.ClusterRole) bool {
+	return clusterRole.AggregationRule != nil && len(clusterRole.AggregationRule.ClusterRoleSelectors) > 0
 }

@@ -17,7 +17,6 @@ limitations under the License.
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -26,11 +25,12 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
-	clientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/util/diff"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/util/diff"
+	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 )
 
 func newRedFederalCowHammerConfig() clientcmdapi.Config {
@@ -863,15 +863,14 @@ func testConfigCommand(args []string, startingConfig clientcmdapi.Config, t *tes
 	argsToUse = append(argsToUse, "--kubeconfig="+fakeKubeFile.Name())
 	argsToUse = append(argsToUse, args...)
 
-	buf := bytes.NewBuffer([]byte{})
-
-	cmd := NewCmdConfig(clientcmd.NewDefaultPathOptions(), buf, buf)
+	streams, _, buf, _ := genericclioptions.NewTestIOStreams()
+	cmd := NewCmdConfig(cmdutil.NewFactory(genericclioptions.NewTestConfigFlags()), clientcmd.NewDefaultPathOptions(), streams)
+	// "context" is a global flag, inherited from base kubectl command in the real world
+	cmd.PersistentFlags().String("context", "", "The name of the kubeconfig context to use")
 	cmd.SetArgs(argsToUse)
 	cmd.Execute()
 
-	// outBytes, _ := ioutil.ReadFile(fakeKubeFile.Name())
 	config := clientcmd.GetConfigFromFileOrDie(fakeKubeFile.Name())
-
 	return buf.String(), *config
 }
 
@@ -897,7 +896,7 @@ func (test configCommandTest) run(t *testing.T) string {
 	testSetNilMapsToEmpties(reflect.ValueOf(&actualConfig))
 	testClearLocationOfOrigin(&actualConfig)
 
-	if !api.Semantic.DeepEqual(test.expectedConfig, actualConfig) {
+	if !apiequality.Semantic.DeepEqual(test.expectedConfig, actualConfig) {
 		t.Errorf("diff: %v", diff.ObjectDiff(test.expectedConfig, actualConfig))
 		t.Errorf("expected: %#v\n actual:   %#v", test.expectedConfig, actualConfig)
 	}

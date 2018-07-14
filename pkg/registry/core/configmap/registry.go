@@ -17,20 +17,23 @@ limitations under the License.
 package configmap
 
 import (
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/rest"
-	metav1 "k8s.io/kubernetes/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/watch"
+	"context"
+
+	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apiserver/pkg/registry/rest"
+	api "k8s.io/kubernetes/pkg/apis/core"
 )
 
 // Registry is an interface for things that know how to store ConfigMaps.
 type Registry interface {
-	ListConfigMaps(ctx api.Context, options *api.ListOptions) (*api.ConfigMapList, error)
-	WatchConfigMaps(ctx api.Context, options *api.ListOptions) (watch.Interface, error)
-	GetConfigMap(ctx api.Context, name string, options *metav1.GetOptions) (*api.ConfigMap, error)
-	CreateConfigMap(ctx api.Context, cfg *api.ConfigMap) (*api.ConfigMap, error)
-	UpdateConfigMap(ctx api.Context, cfg *api.ConfigMap) (*api.ConfigMap, error)
-	DeleteConfigMap(ctx api.Context, name string) error
+	ListConfigMaps(ctx context.Context, options *metainternalversion.ListOptions) (*api.ConfigMapList, error)
+	WatchConfigMaps(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error)
+	GetConfigMap(ctx context.Context, name string, options *metav1.GetOptions) (*api.ConfigMap, error)
+	CreateConfigMap(ctx context.Context, cfg *api.ConfigMap, createValidation rest.ValidateObjectFunc, options *metav1.CreateOptions) (*api.ConfigMap, error)
+	UpdateConfigMap(ctx context.Context, cfg *api.ConfigMap, createValidation rest.ValidateObjectFunc, updateValidation rest.ValidateObjectUpdateFunc, options *metav1.UpdateOptions) (*api.ConfigMap, error)
+	DeleteConfigMap(ctx context.Context, name string) error
 }
 
 // storage puts strong typing around storage calls
@@ -44,7 +47,7 @@ func NewRegistry(s rest.StandardStorage) Registry {
 	return &storage{s}
 }
 
-func (s *storage) ListConfigMaps(ctx api.Context, options *api.ListOptions) (*api.ConfigMapList, error) {
+func (s *storage) ListConfigMaps(ctx context.Context, options *metainternalversion.ListOptions) (*api.ConfigMapList, error) {
 	obj, err := s.List(ctx, options)
 	if err != nil {
 		return nil, err
@@ -53,11 +56,11 @@ func (s *storage) ListConfigMaps(ctx api.Context, options *api.ListOptions) (*ap
 	return obj.(*api.ConfigMapList), err
 }
 
-func (s *storage) WatchConfigMaps(ctx api.Context, options *api.ListOptions) (watch.Interface, error) {
+func (s *storage) WatchConfigMaps(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
 	return s.Watch(ctx, options)
 }
 
-func (s *storage) GetConfigMap(ctx api.Context, name string, options *metav1.GetOptions) (*api.ConfigMap, error) {
+func (s *storage) GetConfigMap(ctx context.Context, name string, options *metav1.GetOptions) (*api.ConfigMap, error) {
 	obj, err := s.Get(ctx, name, options)
 	if err != nil {
 		return nil, err
@@ -66,8 +69,8 @@ func (s *storage) GetConfigMap(ctx api.Context, name string, options *metav1.Get
 	return obj.(*api.ConfigMap), nil
 }
 
-func (s *storage) CreateConfigMap(ctx api.Context, cfg *api.ConfigMap) (*api.ConfigMap, error) {
-	obj, err := s.Create(ctx, cfg)
+func (s *storage) CreateConfigMap(ctx context.Context, cfg *api.ConfigMap, createValidation rest.ValidateObjectFunc, options *metav1.CreateOptions) (*api.ConfigMap, error) {
+	obj, err := s.Create(ctx, cfg, createValidation, options)
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +78,8 @@ func (s *storage) CreateConfigMap(ctx api.Context, cfg *api.ConfigMap) (*api.Con
 	return obj.(*api.ConfigMap), nil
 }
 
-func (s *storage) UpdateConfigMap(ctx api.Context, cfg *api.ConfigMap) (*api.ConfigMap, error) {
-	obj, _, err := s.Update(ctx, cfg.Name, rest.DefaultUpdatedObjectInfo(cfg, api.Scheme))
+func (s *storage) UpdateConfigMap(ctx context.Context, cfg *api.ConfigMap, createValidation rest.ValidateObjectFunc, updateValidation rest.ValidateObjectUpdateFunc, options *metav1.UpdateOptions) (*api.ConfigMap, error) {
+	obj, _, err := s.Update(ctx, cfg.Name, rest.DefaultUpdatedObjectInfo(cfg), createValidation, updateValidation, false, options)
 	if err != nil {
 		return nil, err
 	}
@@ -84,8 +87,7 @@ func (s *storage) UpdateConfigMap(ctx api.Context, cfg *api.ConfigMap) (*api.Con
 	return obj.(*api.ConfigMap), nil
 }
 
-func (s *storage) DeleteConfigMap(ctx api.Context, name string) error {
-	_, err := s.Delete(ctx, name, nil)
-
+func (s *storage) DeleteConfigMap(ctx context.Context, name string) error {
+	_, _, err := s.Delete(ctx, name, nil)
 	return err
 }

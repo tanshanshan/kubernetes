@@ -17,15 +17,25 @@ limitations under the License.
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
+	"github.com/ghodss/yaml"
+	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
+	apimachineryversion "k8s.io/apimachinery/pkg/version"
 	kubeadmutil "k8s.io/kubernetes/cmd/kubeadm/app/util"
 	"k8s.io/kubernetes/pkg/version"
 )
 
+// Version provides the version information of kubeadm.
+type Version struct {
+	ClientVersion *apimachineryversion.Info `json:"clientVersion"`
+}
+
+// NewCmdVersion provides the version information of kubeadm.
 func NewCmdVersion(out io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
@@ -35,10 +45,45 @@ func NewCmdVersion(out io.Writer) *cobra.Command {
 			kubeadmutil.CheckErr(err)
 		},
 	}
+	cmd.Flags().StringP("output", "o", "", "Output format; available options are 'yaml', 'json' and 'short'")
 	return cmd
 }
 
+// RunVersion provides the version information of kubeadm in format depending on arguments
+// specified in cobra.Command.
 func RunVersion(out io.Writer, cmd *cobra.Command) error {
-	fmt.Fprintf(out, "kubeadm version: %#v\n", version.Get())
+	glog.V(1).Infoln("[version] retrieving version info")
+	clientVersion := version.Get()
+	v := Version{
+		ClientVersion: &clientVersion,
+	}
+
+	const flag = "output"
+	of, err := cmd.Flags().GetString(flag)
+	if err != nil {
+		glog.Fatalf("error accessing flag %s for command %s: %v", flag, cmd.Name(), err)
+	}
+
+	switch of {
+	case "":
+		fmt.Fprintf(out, "kubeadm version: %#v\n", v.ClientVersion)
+	case "short":
+		fmt.Fprintf(out, "%s\n", v.ClientVersion.GitVersion)
+	case "yaml":
+		y, err := yaml.Marshal(&v)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, string(y))
+	case "json":
+		y, err := json.MarshalIndent(&v, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, string(y))
+	default:
+		return fmt.Errorf("invalid output format: %s", of)
+	}
+
 	return nil
 }
