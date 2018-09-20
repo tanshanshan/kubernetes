@@ -305,10 +305,14 @@ func (a *HorizontalController) reconcileKey(key string) error {
 	}
 
 	hpa, err := a.hpaLister.HorizontalPodAutoscalers(namespace).Get(name)
-	if errors.IsNotFound(err) {
-		glog.Infof("Horizontal Pod Autoscaler %s has been deleted in %s", name, namespace)
-		delete(a.recommendations, key)
-		return nil
+	if err != nil {
+		if errors.IsNotFound(err) {
+			glog.Infof("Horizontal Pod Autoscaler %s has been deleted in %s", name, namespace)
+			delete(a.recommendations, key)
+			return nil
+		} else {
+			return err
+		}
 	}
 
 	return a.reconcileAutoscaler(hpa, key)
